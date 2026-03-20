@@ -37,6 +37,20 @@
   padding: 2em;
 }
 
+.api-button {
+  margin-top: 1rem;
+}
+
+.api-result {
+  margin-top: 0.75rem;
+  color: #2f855a;
+}
+
+.api-error {
+  margin-top: 0.75rem;
+  color: #c53030;
+}
+
 .read-the-docs {
   color: #888;
 }

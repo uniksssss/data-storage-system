@@ -10,5 +10,5 @@
     "noEmit": true,
     "isolatedModules": true
   },
-  "include": ["public/sw.js"]
+  "include": ["src/sw.ts"]
 }

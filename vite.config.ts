@@ -7,6 +7,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       manifest: {
         name: 'Data Storage System',
         short_name: 'DataStorage',
@@ -14,15 +17,6 @@ export default defineConfig({
         display: 'standalone',
         scope: '/',
         start_url: '/',
-      },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/api\./,
-            handler: 'NetworkFirst'
-          }
-        ]
       },
       devOptions: {
         enabled: true,
