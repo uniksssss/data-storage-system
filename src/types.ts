@@ -1,19 +1,9 @@
-export type CachePolicy = {
-  ttl?: number;
-  swr?: number;
-  // encrypted?: boolean;
-  // iv?: string;
-  // apiVersion?: string | number;
-  // tags?: Array<CacheTag>;
+export type JsonRpcRequestBody = {
+  id: string | number;
+  jsonrpc: string;
+  method: string;
+  params?: Record<string, unknown>;
 };
 
-export type CacheTag = string;
-
-export type CacheRecordMeta = {
-  createdAt: number;
-  updatedAt: number;
-  accessedAt: number;
-  accessCount: number;
-  size?: number;
-  policy: CachePolicy;
-};
+export const isJsonRpcRequestBody = (data: Record<string, unknown>): data is JsonRpcRequestBody =>
+  !!data && typeof data === 'object' && 'jsonrpc' in data;

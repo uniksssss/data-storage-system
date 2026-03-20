@@ -3,8 +3,9 @@
 import { clientsClaim } from 'workbox-core';
 import { precacheAndRoute } from 'workbox-precaching';
 import { CacheClient } from './domain/cache-client/cache-client.service';
-import { MemoryStorageDriver } from './domain/storage-driver/memory-storage-driver';
+import { StorageDriver } from './domain/storage-driver/storage-driver';
 import { Serializer } from './domain/serializer/serializer.service';
+import { CacheKeyGenerator } from './domain/cache-key-generator/cache-key-generator.service';
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision: string }>;
@@ -13,10 +14,11 @@ declare const self: ServiceWorkerGlobalScope & {
 clientsClaim();
 precacheAndRoute(self.__WB_MANIFEST);
 
-const cacheClient = new CacheClient(new MemoryStorageDriver(), new Serializer());
+const cacheClient = new CacheClient(new StorageDriver(), new Serializer());
+const keyGenerator = new CacheKeyGenerator();
 
 async function handleApiRequest(request: Request, event: FetchEvent): Promise<Response> {
-  const key = request.url;
+  const key = await keyGenerator.getKey(request);
   const namespace = 'api';
   console.log('--- REQUEST ---', request.url);
 

@@ -1,4 +1,4 @@
-import type { CacheRecordMeta } from '../../types';
+import type { CacheRecordMeta } from '../types';
 
 export type GetCacheRecordResult<T> = {
   data: T | null;

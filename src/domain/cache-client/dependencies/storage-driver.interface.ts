@@ -1,4 +1,4 @@
-import type { CacheRecordMeta } from '../../../types';
+import type { CacheRecordMeta } from '../../types';
 
 export interface IStorageDriver {
   get(namespace: string, key: string): Promise<GetStorageRecordResult>;

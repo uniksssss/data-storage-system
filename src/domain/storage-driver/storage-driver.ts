@@ -1,4 +1,4 @@
-import type { CacheRecordMeta } from '../../types';
+import type { CacheRecordMeta } from '../types';
 import type { IStorageDriver } from '../cache-client/dependencies/storage-driver.interface';
 
 type InternalStorageRecord = {
@@ -6,7 +6,7 @@ type InternalStorageRecord = {
   meta: CacheRecordMeta;
 };
 
-export class MemoryStorageDriver implements IStorageDriver {
+export class StorageDriver implements IStorageDriver {
   private storage = new Map<string, Map<string, InternalStorageRecord>>();
 
   get(namespace: string, key: string) {

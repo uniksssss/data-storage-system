@@ -1,4 +1,4 @@
-import type { CachePolicy, CacheRecordMeta } from '../../types';
+import type { CachePolicy, CacheRecordMeta } from '../types';
 import type { GetCacheRecordResult } from './cache-client.types';
 import type { ISerializer } from './dependencies/serializer.interface';
 import type { IStorageDriver } from './dependencies/storage-driver.interface';
