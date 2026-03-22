@@ -6,6 +6,8 @@ import { CacheClient } from './domain/cache-client/cache-client.service';
 import { StorageDriver } from './domain/storage-driver/storage-driver';
 import { Serializer } from './domain/serializer/serializer.service';
 import { CacheKeyGenerator } from './domain/cache-key-generator/cache-key-generator.service';
+import { EvictionPolicy } from './domain/eviction-policy/eviction-policy.service';
+import { UsageTracker } from './domain/usage-tracker/usage-tracker.service';
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision: string }>;
@@ -14,7 +16,12 @@ declare const self: ServiceWorkerGlobalScope & {
 clientsClaim();
 precacheAndRoute(self.__WB_MANIFEST);
 
-const cacheClient = new CacheClient(new StorageDriver(), new Serializer());
+const cacheClient = new CacheClient(
+  new EvictionPolicy(0.8),
+  new UsageTracker(0, {}),
+  new StorageDriver(),
+  new Serializer(),
+);
 const keyGenerator = new CacheKeyGenerator();
 
 async function handleApiRequest(request: Request, event: FetchEvent): Promise<Response> {

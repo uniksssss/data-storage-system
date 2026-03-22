@@ -5,6 +5,11 @@ export type CachePolicy = {
 
 export type CacheTag = string;
 
+export type CacheRecord<T> = {
+  data: T;
+  meta: CacheRecordMeta;
+};
+
 export type CacheRecordMeta = {
   createdAt: number;
   updatedAt: number;
@@ -13,3 +18,5 @@ export type CacheRecordMeta = {
   size?: number;
   policy: CachePolicy;
 };
+
+export type CacheRecordsMeta = Record<string, CacheRecordMeta>;

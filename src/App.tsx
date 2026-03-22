@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import reactLogo from './assets/react.svg';
 import './App.css';
+import { Serializer } from './domain/serializer/serializer.service';
+import { CacheClient } from './domain/cache-client/cache-client.service';
+import { EvictionPolicy } from './domain/eviction-policy/eviction-policy.service';
+import { UsageTracker } from './domain/usage-tracker/usage-tracker.service';
+import { StorageDriver } from './domain/storage-driver/storage-driver';
 
 function App() {
-  const [count, setCount] = useState(0);
   const [apiResult, setApiResult] = useState<string>('');
   const [apiError, setApiError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -37,24 +40,13 @@ function App() {
 
   return (
     <>
-      <div>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
       <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>count is {count}</button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
         <button className="api-button" onClick={() => void handleApiTest()} disabled={isLoading}>
           {isLoading ? 'Loading...' : 'Fetch /api/test'}
         </button>
         {apiResult ? <p className="api-result">Result: {apiResult}</p> : null}
         {apiError ? <p className="api-error">Error: {apiError}</p> : null}
       </div>
-      <p className="read-the-docs">Click on the Vite and React logos to learn more</p>
     </>
   );
 }
