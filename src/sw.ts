@@ -8,6 +8,7 @@ import { Serializer } from './domain/serializer/serializer.service';
 import { CacheKeyGenerator } from './domain/cache-key-generator/cache-key-generator.service';
 import { EvictionPolicy } from './domain/eviction-policy/eviction-policy.service';
 import { UsageTracker } from './domain/usage-tracker/usage-tracker.service';
+import { CACHE_OPT_IN_HEADER } from './domain/consts';
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision: string }>;
@@ -23,10 +24,22 @@ const cacheClient = new CacheClient(
   new Serializer(),
 );
 const keyGenerator = new CacheKeyGenerator();
+const CACHE_NAMESPACE = 'api';
+
+function shouldHandleRequest(request: Request): boolean {
+  const headerValue = request.headers.get(CACHE_OPT_IN_HEADER);
+  if (!headerValue) {
+    return false;
+  }
+
+  const normalized = headerValue.trim().toLowerCase();
+
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
 
 async function handleApiRequest(request: Request, event: FetchEvent): Promise<Response> {
   const key = await keyGenerator.getKey(request);
-  const namespace = 'api';
+  const namespace = CACHE_NAMESPACE;
   console.log('--- REQUEST ---', request.url);
 
   const cached = await cacheClient.get(namespace, key);
@@ -95,7 +108,7 @@ self.addEventListener('activate', () => {
 });
 
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('jsonplaceholder')) {
+  if (shouldHandleRequest(event.request)) {
     event.respondWith(handleApiRequest(event.request, event));
   }
 });

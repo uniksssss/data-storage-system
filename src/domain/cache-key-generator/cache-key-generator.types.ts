@@ -2,6 +2,10 @@ export type CacheKeyGeneratorConfig = {
   separator?: string;
   paramsHandler?: RequestBodyParamsHandler;
   apiVersionExtractor?: (request: Request) => Promise<string>;
+  headerAllowList?: string[];
+  bodyAllowList?: string[];
+  headersSelector?: (headers: Headers) => Record<string, string> | null;
+  bodySelector?: (body: Record<string, unknown>) => unknown;
 };
 
 export type RequestBodyParamsHandler = {
@@ -12,4 +16,5 @@ export type RequestBodyParamsHandler = {
 export type CacheKeyPayload = {
   url: string;
   method?: string;
+  apiVersion?: string;
 };

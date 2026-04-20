@@ -1,10 +1,6 @@
 import { useState } from 'react';
 import './App.css';
-import { Serializer } from './domain/serializer/serializer.service';
-import { CacheClient } from './domain/cache-client/cache-client.service';
-import { EvictionPolicy } from './domain/eviction-policy/eviction-policy.service';
-import { UsageTracker } from './domain/usage-tracker/usage-tracker.service';
-import { StorageDriver } from './domain/storage-driver/storage-driver';
+import { cachedFetch } from './domain/http/cached-fetch';
 
 function App() {
   const [apiResult, setApiResult] = useState<string>('');
@@ -17,7 +13,7 @@ function App() {
     setApiResult('');
 
     try {
-      const response = await fetch('https://jsonplaceholder.typicode.com/todos/1');
+      const response = await cachedFetch('https://jsonplaceholder.typicode.com/todos/1', { swCache: true });
       const contentType = response.headers.get('content-type') ?? '';
 
       if (!response.ok) {

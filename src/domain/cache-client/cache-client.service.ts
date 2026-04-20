@@ -35,7 +35,7 @@ export class CacheClient {
     const encoded = await this.serializer.encode(data);
     const newSize = encoded.byteLength;
 
-    const existing = await this.storage.get(namespace, key);
+    const existing = await this.storage.get<Uint8Array>(namespace, key);
     const oldSize = existing?.meta.size ?? 0;
 
     const usage = this.usageTracker.getUsage();
@@ -72,15 +72,19 @@ export class CacheClient {
       policy,
     };
 
-    await this.storage.set(namespace, key, encoded, meta);
+    await this.storage.set<Uint8Array>(namespace, key, encoded, meta);
 
     this.usageTracker.onSet(namespace, key, newSize);
   }
 
   async get<T>(namespace: string, key: string): Promise<GetCacheRecordResult<T>> {
-    const record = await this.storage.get(namespace, key);
+    const record = await this.storage.get<Uint8Array>(namespace, key);
 
     if (!record) {
+      return null;
+    }
+
+    if (!record.data) {
       return null;
     }
 
@@ -104,7 +108,7 @@ export class CacheClient {
       accessCount: record.meta.accessCount + 1,
     };
 
-    await this.storage.set(namespace, key, record.data, nextMeta);
+    await this.storage.set<Uint8Array>(namespace, key, record.data, nextMeta);
 
     const decoded = await this.serializer.decode<T>(record.data);
 
@@ -182,6 +186,7 @@ export class CacheClient {
 
   async delete(namespace: string, key: string): Promise<void> {
     await this.storage.delete(namespace, key);
+    this.usageTracker.onDelete(namespace, key, 0);
   }
 
   async clear(namespace: string): Promise<void> {

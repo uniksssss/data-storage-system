@@ -1,7 +1,8 @@
 import type { CacheRecordMeta } from '../types';
 
 export type StoredRecord = {
+  namespace: string;
   key: string;
-  data?: ArrayBuffer;
+  data?: Uint8Array;
   meta: CacheRecordMeta;
 };
