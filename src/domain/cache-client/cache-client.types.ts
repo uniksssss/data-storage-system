@@ -5,6 +5,7 @@ export type GetCacheRecordResult<T> = {
   meta: CacheRecordMeta;
   isFresh: boolean;
   isStale: boolean;
+  isExpired: boolean;
 } | null;
 
 export type CacheStats = Record<string, NamespaceCacheStats>;

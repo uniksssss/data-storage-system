@@ -1,10 +1,10 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({ jsxImportSource: '@emotion/react' }),
     VitePWA({
       registerType: 'autoUpdate',
       strategies: 'injectManifest',
@@ -22,6 +22,16 @@ export default defineConfig({
         enabled: true,
         type: 'module'
       }
-    })
-  ]
+    }),
+  ],
+  test: {
+  globals: true,
+  environment: 'node',
+  coverage: {
+    provider: 'v8',
+    reporter: ['text', 'html'],
+    include: ['src/domain/**/*.ts'],
+    exclude: ['**/*.test.ts'],
+  },
+} 
 });

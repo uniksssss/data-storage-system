@@ -1,0 +1,12 @@
+{
+  "todos": [
+    { "id": 1, "userId": 1, "title": "Task one", "completed": false },
+    { "id": 2, "userId": 1, "title": "Task two", "completed": true }
+  ],
+  "posts": [
+    { "id": 1, "userId": 1, "title": "Post one", "body": "Body text" }
+  ],
+  "users": [
+    { "id": 1, "name": "Alice", "email": "alice@example.com" }
+  ]
+}

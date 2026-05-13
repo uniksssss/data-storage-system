@@ -98,8 +98,13 @@ export class CacheClient {
     const isExpired = ttl > 0 && age > ttl + swr;
 
     if (isExpired) {
-      await this.storage.delete(namespace, key);
-      return null;
+      return {
+        data: await this.serializer.decode<T>(record.data),
+        meta: record.meta,
+        isFresh: false,
+        isStale: false,
+        isExpired: true,
+      };
     }
 
     const nextMeta: CacheRecordMeta = {
@@ -117,6 +122,7 @@ export class CacheClient {
       meta: nextMeta,
       isFresh,
       isStale,
+      isExpired,
     };
   }
 
@@ -181,6 +187,22 @@ export class CacheClient {
       misses: 0,
       missRate: 0,
       evictions: 0,
+    };
+  }
+
+  async getExpired<T>(namespace: string, key: string) {
+    const record = await this.storage.get<Uint8Array>(namespace, key);
+
+    if (!record) {
+      return null;
+    }
+
+    const decoded = await this.serializer.decode<T>(record.data!);
+
+    return {
+      data: decoded,
+      meta: record.meta,
+      isExpired: true,
     };
   }
 

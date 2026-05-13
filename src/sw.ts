@@ -5,17 +5,18 @@ import { precacheAndRoute } from 'workbox-precaching';
 import { CacheClient } from './domain/cache-client/cache-client.service';
 import { StorageDriver } from './domain/storage-driver/storage-driver';
 import { Serializer } from './domain/serializer/serializer.service';
-import { CacheKeyGenerator } from './domain/cache-key-generator/cache-key-generator.service';
 import { EvictionPolicy } from './domain/eviction-policy/eviction-policy.service';
 import { UsageTracker } from './domain/usage-tracker/usage-tracker.service';
-import { CACHE_OPT_IN_HEADER } from './domain/consts';
+import { MetricsCollector } from './benchmark/metrics-collector';
+import { BASE_URL } from './consts';
+import { parseJson } from './api';
 
 declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision: string }>;
 };
 
-clientsClaim();
 precacheAndRoute(self.__WB_MANIFEST);
+clientsClaim();
 
 const cacheClient = new CacheClient(
   new EvictionPolicy(0.8),
@@ -23,80 +24,90 @@ const cacheClient = new CacheClient(
   new StorageDriver(),
   new Serializer(),
 );
-const keyGenerator = new CacheKeyGenerator();
+const metrics = new MetricsCollector();
 const CACHE_NAMESPACE = 'api';
 
 function shouldHandleRequest(request: Request): boolean {
-  const headerValue = request.headers.get(CACHE_OPT_IN_HEADER);
-  if (!headerValue) {
-    return false;
-  }
-
-  const normalized = headerValue.trim().toLowerCase();
-
-  return normalized === '1' || normalized === 'true' || normalized === 'yes';
+  const url = new URL(request.url);
+  return request.url.startsWith(BASE_URL) && url.searchParams.get('__cache') === '1';
 }
 
 async function handleApiRequest(request: Request, event: FetchEvent): Promise<Response> {
-  const key = await keyGenerator.getKey(request);
+  const url = new URL(request.url);
+  url.searchParams.delete('__cache');
+
+  const normalizedUrl = url.toString();
+
+  const key = normalizedUrl;
   const namespace = CACHE_NAMESPACE;
-  console.log('--- REQUEST ---', request.url);
 
+  const t0 = performance.now();
   const cached = await cacheClient.get(namespace, key);
-  if (!cached) {
-    console.log('CACHE MISS');
-  }
+  const cacheReadLatency = performance.now() - t0;
 
-  if (cached && cached.isFresh) {
-    console.log('CACHE HIT (fresh)');
+  if (cached?.isFresh) {
+    metrics.recordHit(cacheReadLatency, false);
     return new Response(JSON.stringify(cached.data), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cache': 'HIT',
+        'X-Cache-Status': 'FRESH',
+        'Access-Control-Expose-Headers': 'X-Cache, X-Cache-Status',
+      },
     });
   }
 
-  if (cached && cached.isStale) {
-    console.log('CACHE HIT (stale) → background update');
+  if (cached?.isStale) {
+    metrics.recordHit(cacheReadLatency, true);
     event.waitUntil(
-      fetch(request)
-        .then(async (response) => {
-          console.log('FETCH FROM NETWORK (background)');
-          const contentType = response.headers.get('content-type') ?? '';
-          if (!contentType.includes('application/json')) {
-            return;
-          }
-
-          const data: unknown = await response.clone().json();
-
-          await cacheClient.set(namespace, key, data, {
-            ttl: 5000,
-            swr: 5000,
-          });
-          console.log('BACKGROUND REFRESH DONE');
+      fetch(normalizedUrl, { cache: 'no-store' })
+        .then(async (res) => {
+          const data = await parseJson<unknown>(res.clone());
+          await cacheClient.set(namespace, key, data, { ttl: 5000, swr: 5000 });
         })
-        .catch((e) => {
-          console.error('Background refresh failed:', e instanceof Error ? e.message : 'Unknown error');
-        }),
+        .catch(() => {}),
     );
-
     return new Response(JSON.stringify(cached.data), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-  console.log('FETCH FROM NETWORK');
-
-  const response = await fetch(request);
-  const contentType = response.headers.get('content-type') ?? '';
-
-  if (contentType.includes('application/json')) {
-    const data: unknown = await response.clone().json();
-
-    await cacheClient.set(namespace, key, data, {
-      ttl: 5000,
-      swr: 5000,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cache': 'HIT',
+        'X-Cache-Status': 'STALE',
+        'Access-Control-Expose-Headers': 'X-Cache, X-Cache-Status',
+      },
     });
   }
 
-  return response;
+  try {
+    const tNet = performance.now();
+    const response = await fetch(normalizedUrl, { cache: 'no-store' });
+    const networkLatency = performance.now() - tNet;
+    metrics.recordMiss(networkLatency);
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      const data: unknown = await response.clone().json();
+      await cacheClient.set(namespace, key, data, { ttl: 5000, swr: 5000 });
+    }
+
+    return response;
+  } catch {
+    const expired = await cacheClient.getExpired(namespace, key);
+    if (expired) {
+      return new Response(JSON.stringify(expired.data), {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Cache': 'HIT',
+          'X-Cache-Status': 'OFFLINE',
+          'Access-Control-Expose-Headers': 'X-Cache, X-Cache-Status',
+        },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: 'Network unavailable and no cached data' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'X-Cache': 'MISS' },
+    });
+  }
 }
 
 self.addEventListener('install', () => {
@@ -108,7 +119,28 @@ self.addEventListener('activate', () => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  if (url.href.startsWith(BASE_URL) && url.searchParams.get('__cache') !== '1') {
+    return;
+  }
+
   if (shouldHandleRequest(event.request)) {
     event.respondWith(handleApiRequest(event.request, event));
+  }
+});
+
+interface SWMessage {
+  type: string;
+}
+
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  const data = event.data as SWMessage;
+  if (data?.type === 'GET_METRICS') {
+    event.ports[0]?.postMessage(metrics.getReport());
+  }
+  if (data?.type === 'RESET_METRICS') {
+    metrics.reset();
+    event.ports[0]?.postMessage({ ok: true });
   }
 });

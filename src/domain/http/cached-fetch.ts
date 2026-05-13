@@ -1,16 +1,25 @@
-import { CACHE_OPT_IN_HEADER } from '../consts';
-
 type CachedFetchOptions = RequestInit & {
   swCache?: boolean;
 };
 
 export function cachedFetch(input: RequestInfo | URL, init: CachedFetchOptions = {}): Promise<Response> {
-  const { swCache, headers, ...rest } = init;
-  const resolvedHeaders = new Headers(headers);
+  const { swCache, ...rest } = init;
 
-  if (swCache) {
-    resolvedHeaders.set(CACHE_OPT_IN_HEADER, '1');
+  let url: string;
+
+  if (typeof input === 'string') {
+    url = input;
+  } else if (input instanceof URL) {
+    url = input.toString();
+  } else {
+    url = input.url;
   }
 
-  return fetch(input, { ...rest, headers: resolvedHeaders });
+  if (swCache) {
+    const u = new URL(url);
+    u.searchParams.set('__cache', '1');
+    url = u.toString();
+  }
+
+  return fetch(url, rest);
 }
