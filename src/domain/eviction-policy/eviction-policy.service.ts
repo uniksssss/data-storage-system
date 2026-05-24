@@ -1,11 +1,12 @@
 import { CacheError } from '../errors';
 import type { CacheRecordsMeta, CacheRecordMeta } from '../types';
+import { DEFAULT_EVICTION_THRESHOLD } from './eviction-policy.consts';
 import type { ShouldEvictParams } from './eviction-policy.types';
 
 export class EvictionPolicy {
   private readonly evictionThreshold: number;
 
-  constructor(evictionThreshold: number) {
+  constructor(evictionThreshold: number = DEFAULT_EVICTION_THRESHOLD) {
     if (evictionThreshold <= 0 || evictionThreshold > 1) {
       throw new CacheError('Порог заполненности хранилища должен быть в диапазоне 0...1');
     }
@@ -17,6 +18,10 @@ export class EvictionPolicy {
     const { usage, quota, newRecordSize } = params;
 
     return usage + newRecordSize >= this.evictionThreshold * quota;
+  }
+
+  maxAllowedBytes(quota: number): number {
+    return this.evictionThreshold * quota;
   }
 
   async pickVictims(budgetBytes: number, getRecords: () => Promise<CacheRecordsMeta>): Promise<Array<string>> {

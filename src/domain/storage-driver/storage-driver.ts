@@ -1,13 +1,20 @@
-import type { CacheRecordMeta } from '../types';
+import type { CacheRecordMeta, CacheRecordsMeta } from '../types';
 import { CacheError } from '../errors';
 import type {
   GetStorageRecordResult,
+  InitStorageDriverParams,
   IStorageDriver,
+  StorageQuota,
   StoredRecord,
   StoredRecordPredicate,
 } from '../cache-client/dependencies/storage-driver.interface';
-
-const MAX_MEMORY = 1024 * 1024 * 512; // 512MB
+import {
+  DEFAULT_MAX_STORAGE_SIZE_BYTES,
+  STORAGE_DB_NAME,
+  STORAGE_DB_VERSION,
+  STORAGE_INDEX_NAMESPACE,
+  STORAGE_STORE_NAME,
+} from './storage-driver.consts';
 
 function isStoredRecord(value: unknown): value is StoredRecord {
   if (value === null || typeof value !== 'object') {
@@ -56,111 +63,24 @@ function toBytes<T>(data: T): Uint8Array | undefined {
 }
 
 export class StorageDriver implements IStorageDriver {
-  private static readonly DB_NAME = 'storage_driver_db';
-  private static readonly DB_VERSION = 1;
-  private static readonly STORE = 'records';
-  private static readonly INDEX_NAMESPACE = 'by_namespace';
-  private static readonly INDEX_TAG = 'by_tag';
-
-  private db: IDBDatabase | null = null;
-  private maxStorageSize = MAX_MEMORY;
+  private dbPromise: Promise<IDBDatabase> | null = null;
+  private maxStorageSize = DEFAULT_MAX_STORAGE_SIZE_BYTES;
   private usageByNamespace: Record<string, number> = {};
   private usageInitialized = false;
 
-  private ensureEnv(): void {
-    if (typeof indexedDB === 'undefined') {
-      throw new CacheError('IndexedDB is not available in this environment');
-    }
-  }
-
-  private openDB(): Promise<IDBDatabase> {
-    this.ensureEnv();
-
-    if (this.db) {
-      return Promise.resolve(this.db);
+  async init(params: InitStorageDriverParams = {}): Promise<void> {
+    const rawLimit = params.maxStorageSize;
+    if (Array.isArray(rawLimit)) {
+      const explicit = rawLimit[1];
+      if (typeof explicit === 'number') {
+        this.maxStorageSize = explicit;
+      }
+    } else if (typeof rawLimit === 'number') {
+      this.maxStorageSize = rawLimit;
     }
 
-    return new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open(StorageDriver.DB_NAME, StorageDriver.DB_VERSION);
-
-      request.onupgradeneeded = () => {
-        const db = request.result;
-
-        if (!db.objectStoreNames.contains(StorageDriver.STORE)) {
-          const store = db.createObjectStore(StorageDriver.STORE, { keyPath: ['namespace', 'key'] });
-          store.createIndex(StorageDriver.INDEX_NAMESPACE, 'namespace', { unique: false });
-          store.createIndex(StorageDriver.INDEX_TAG, 'meta.policy.tags', { unique: false, multiEntry: true });
-        }
-      };
-
-      request.onsuccess = () => {
-        this.db = request.result;
-        this.db.onversionchange = () => {
-          this.db?.close();
-          this.db = null;
-          this.usageInitialized = false;
-        };
-        resolve(this.db);
-      };
-
-      request.onerror = () => reject(request.error ?? new CacheError('IndexedDB open error'));
-      request.onblocked = () => reject(new CacheError('IndexedDB open request was blocked'));
-    });
-  }
-
-  private withStore<T>(mode: IDBTransactionMode, cb: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-    return this.openDB().then(
-      (db) =>
-        new Promise<T>((resolve, reject) => {
-          const tx = db.transaction(StorageDriver.STORE, mode);
-          const store = tx.objectStore(StorageDriver.STORE);
-          const request = cb(store);
-
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error ?? new CacheError('IndexedDB request error'));
-          tx.onerror = () => reject(tx.error ?? new CacheError('IndexedDB transaction error'));
-        }),
-    );
-  }
-
-  private async ensureUsageTrackingInitialized(): Promise<void> {
-    if (this.usageInitialized) {
-      return;
-    }
-
-    await this.initializeUsageTracking();
-    this.usageInitialized = true;
-  }
-
-  private async initializeUsageTracking(): Promise<void> {
-    const db = await this.openDB();
-
-    await new Promise<void>((resolve, reject) => {
-      this.usageByNamespace = {};
-
-      const tx = db.transaction(StorageDriver.STORE, 'readonly');
-      const store = tx.objectStore(StorageDriver.STORE);
-      const request: IDBRequest<IDBCursorWithValue | null> = store.openCursor();
-
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) {
-          return;
-        }
-
-        if (isStoredRecord(cursor.value)) {
-          const value = cursor.value;
-          const size = value.meta.size ?? (value.data ? value.data.byteLength : 0);
-          this.usageByNamespace[value.namespace] = (this.usageByNamespace[value.namespace] ?? 0) + size;
-        }
-
-        cursor.continue();
-      };
-
-      request.onerror = () => reject(request.error ?? new CacheError('IndexedDB cursor error'));
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new CacheError('IndexedDB transaction error'));
-    });
+    await this.openDB();
+    await this.ensureUsageTrackingInitialized();
   }
 
   async get<T>(namespace: string, key: string): Promise<GetStorageRecordResult<T>> {
@@ -204,6 +124,34 @@ export class StorageDriver implements IStorageDriver {
     return size;
   }
 
+  async updateMeta(namespace: string, key: string, meta: Partial<CacheRecordMeta>): Promise<void> {
+    const db = await this.openDB();
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORAGE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORAGE_STORE_NAME);
+      const getRequest = store.get([namespace, key]) as IDBRequest<StoredRecord | undefined>;
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) {
+          resolve();
+          return;
+        }
+
+        const nextMeta: CacheRecordMeta = { ...existing.meta, ...meta };
+        const next: StoredRecord = { ...existing, meta: nextMeta };
+
+        const putRequest = store.put(next);
+        putRequest.onerror = () => reject(putRequest.error ?? new CacheError('IndexedDB updateMeta put error'));
+      };
+
+      getRequest.onerror = () => reject(getRequest.error ?? new CacheError('IndexedDB updateMeta get error'));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new CacheError('IndexedDB transaction error'));
+    });
+  }
+
   async delete(namespace: string, predicate: StoredRecordPredicate): Promise<Array<string>> {
     await this.ensureUsageTrackingInitialized();
     const db = await this.openDB();
@@ -212,9 +160,9 @@ export class StorageDriver implements IStorageDriver {
       const deleted: Array<string> = [];
       let deletedSize = 0;
 
-      const tx = db.transaction(StorageDriver.STORE, 'readwrite');
-      const store = tx.objectStore(StorageDriver.STORE);
-      const namespaceIndex = store.index(StorageDriver.INDEX_NAMESPACE);
+      const tx = db.transaction(STORAGE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORAGE_STORE_NAME);
+      const namespaceIndex = store.index(STORAGE_INDEX_NAMESPACE);
       const range = IDBKeyRange.only(namespace);
       const request: IDBRequest<IDBCursorWithValue | null> = namespaceIndex.openCursor(range);
 
@@ -257,9 +205,9 @@ export class StorageDriver implements IStorageDriver {
     const db = await this.openDB();
 
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(StorageDriver.STORE, 'readwrite');
-      const store = tx.objectStore(StorageDriver.STORE);
-      const namespaceIndex = store.index(StorageDriver.INDEX_NAMESPACE);
+      const tx = db.transaction(STORAGE_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORAGE_STORE_NAME);
+      const namespaceIndex = store.index(STORAGE_INDEX_NAMESPACE);
       const range = IDBKeyRange.only(namespace);
       const request: IDBRequest<IDBCursorWithValue | null> = namespaceIndex.openCursor(range);
 
@@ -282,12 +230,44 @@ export class StorageDriver implements IStorageDriver {
     });
   }
 
+  async getMeta(): Promise<Record<string, CacheRecordsMeta> | null> {
+    const db = await this.openDB();
+
+    return new Promise((resolve, reject) => {
+      const result: Record<string, CacheRecordsMeta> = {};
+      const tx = db.transaction(STORAGE_STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORAGE_STORE_NAME);
+      const request: IDBRequest<IDBCursorWithValue | null> = store.openCursor();
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          return;
+        }
+
+        if (isStoredRecord(cursor.value)) {
+          const v = cursor.value;
+          if (!result[v.namespace]) {
+            result[v.namespace] = {};
+          }
+          result[v.namespace][v.key] = v.meta;
+        }
+
+        cursor.continue();
+      };
+
+      request.onerror = () => reject(request.error ?? new CacheError('IndexedDB cursor error'));
+      tx.oncomplete = () => resolve(Object.keys(result).length > 0 ? result : null);
+      tx.onerror = () => reject(tx.error ?? new CacheError('IndexedDB transaction error'));
+    });
+  }
+
   async estimateUsage(): Promise<number> {
     await this.ensureUsageTrackingInitialized();
     return Object.values(this.usageByNamespace).reduce((sum, usage) => sum + usage, 0);
   }
 
-  async estimateQuota(): Promise<{ used: number; total: number; available: number; usageRatio: number }> {
+  async estimateQuota(): Promise<StorageQuota> {
     const used = await this.estimateUsage();
 
     if (typeof navigator !== 'undefined') {
@@ -297,7 +277,7 @@ export class StorageDriver implements IStorageDriver {
         };
         const estimate = (await nav.storage?.estimate?.()) ?? {};
         const totalFromEstimate = estimate.quota ?? used;
-        const total = Math.max(this.maxStorageSize, totalFromEstimate);
+        const total = this.maxStorageSize > 0 ? Math.min(this.maxStorageSize, totalFromEstimate) : totalFromEstimate;
         const available = Math.max(total - used, 0);
         const usageRatio = total > 0 ? used / total : 0;
 
@@ -312,5 +292,114 @@ export class StorageDriver implements IStorageDriver {
     const usageRatio = total > 0 ? used / total : 0;
 
     return { used, total, available, usageRatio };
+  }
+
+  private ensureEnv(): void {
+    if (typeof indexedDB === 'undefined') {
+      throw new CacheError('IndexedDB is not available in this environment');
+    }
+  }
+
+  private openDB(): Promise<IDBDatabase> {
+    this.ensureEnv();
+
+    if (this.dbPromise) {
+      return this.dbPromise;
+    }
+
+    this.dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(STORAGE_DB_NAME, STORAGE_DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const db = request.result;
+
+        if (db.objectStoreNames.contains(STORAGE_STORE_NAME)) {
+          db.deleteObjectStore(STORAGE_STORE_NAME);
+        }
+
+        const store = db.createObjectStore(STORAGE_STORE_NAME, { keyPath: ['namespace', 'key'] });
+        store.createIndex(STORAGE_INDEX_NAMESPACE, 'namespace', { unique: false });
+      };
+
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+          this.dbPromise = null;
+          this.usageInitialized = false;
+        };
+        db.onclose = () => {
+          this.dbPromise = null;
+          this.usageInitialized = false;
+        };
+        resolve(db);
+      };
+
+      request.onerror = () => {
+        this.dbPromise = null;
+        reject(request.error ?? new CacheError('IndexedDB open error'));
+      };
+      request.onblocked = () => {
+        this.dbPromise = null;
+        reject(new CacheError('IndexedDB open request was blocked'));
+      };
+    });
+
+    return this.dbPromise;
+  }
+
+  private withStore<T>(mode: IDBTransactionMode, cb: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+    return this.openDB().then(
+      (db) =>
+        new Promise<T>((resolve, reject) => {
+          const tx = db.transaction(STORAGE_STORE_NAME, mode);
+          const store = tx.objectStore(STORAGE_STORE_NAME);
+          const request = cb(store);
+
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error ?? new CacheError('IndexedDB request error'));
+          tx.onerror = () => reject(tx.error ?? new CacheError('IndexedDB transaction error'));
+        }),
+    );
+  }
+
+  private async ensureUsageTrackingInitialized(): Promise<void> {
+    if (this.usageInitialized) {
+      return;
+    }
+
+    await this.initializeUsageTracking();
+    this.usageInitialized = true;
+  }
+
+  private async initializeUsageTracking(): Promise<void> {
+    const db = await this.openDB();
+
+    await new Promise<void>((resolve, reject) => {
+      this.usageByNamespace = {};
+
+      const tx = db.transaction(STORAGE_STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORAGE_STORE_NAME);
+      const request: IDBRequest<IDBCursorWithValue | null> = store.openCursor();
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          return;
+        }
+
+        if (isStoredRecord(cursor.value)) {
+          const value = cursor.value;
+          const size = value.meta.size ?? (value.data ? value.data.byteLength : 0);
+          this.usageByNamespace[value.namespace] = (this.usageByNamespace[value.namespace] ?? 0) + size;
+        }
+
+        cursor.continue();
+      };
+
+      request.onerror = () => reject(request.error ?? new CacheError('IndexedDB cursor error'));
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new CacheError('IndexedDB transaction error'));
+    });
   }
 }

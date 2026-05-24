@@ -1,0 +1,6 @@
+export const DEFAULT_BATCH_SIZE = 16;
+export const DEFAULT_HOT_MAX_ENTRIES = 256;
+export const DEFAULT_WARM_UP_TOP_N = 50;
+
+export const DEFAULT_HOT_LIMIT_BYTES = 1024 * 1024 * 4;
+export const DEFAULT_COLD_LIMIT_BYTES = 1024 * 1024 * 64;

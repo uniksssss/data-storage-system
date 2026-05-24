@@ -7,19 +7,3 @@ export type GetCacheRecordResult<T> = {
   isStale: boolean;
   isExpired: boolean;
 } | null;
-
-export type CacheStats = Record<string, NamespaceCacheStats>;
-export type NamespaceCacheStats = {
-  size: number;
-  count: number;
-  averageSize: number;
-  effectiveness: Record<string, CacheRecordEffectivenessStats>;
-};
-
-export type CacheRecordEffectivenessStats = {
-  hits: number;
-  hitRate: number;
-  misses: number;
-  missRate: number;
-  evictions: number;
-};

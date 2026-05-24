@@ -1,19 +1,18 @@
+import type { MetricsReport } from '../domain/metrics/metrics.types';
+
+export type { MetricsReport, MetricsData } from '../domain/metrics/metrics.types';
+
+export type LogEntryType = 'HIT' | 'MISS' | 'STALE' | 'OFFLINE' | 'TIMEOUT' | 'NETWORK';
+
 export type LogEntry = {
   id: number;
   time: string;
-  type: 'HIT' | 'MISS' | 'STALE';
+  type: LogEntryType;
   ms: number;
   url: string;
 };
 
-export type SWMetrics = {
-  hitRate: number;
-  avgLatencyHit: number;
-  avgLatencyMiss: number;
-  p95LatencyHit: number;
-  p95LatencyMiss: number;
-  speedup: number;
-};
+export type SWMetrics = MetricsReport;
 
 export type CompareData = {
   cached: number | null;

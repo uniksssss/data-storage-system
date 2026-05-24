@@ -1,0 +1,1 @@
+export const DEFAULT_EVICTION_THRESHOLD = 0.8;

@@ -172,13 +172,33 @@ export const statusDotCss = (active: boolean) => css`
   display: inline-block;
 `;
 
-export const logBadgeCss = (type: 'HIT' | 'MISS' | 'STALE') => css`
+import type { LogEntryType } from './benchmark.types';
+
+const LOG_BADGE_BG: Record<LogEntryType, string> = {
+  HIT: '#EAF3DE',
+  STALE: '#FAEEDA',
+  OFFLINE: '#E1ECF7',
+  MISS: '#FAECE7',
+  TIMEOUT: '#F4D7D7',
+  NETWORK: '#F4D7D7',
+};
+
+const LOG_BADGE_FG: Record<LogEntryType, string> = {
+  HIT: '#3B6D11',
+  STALE: '#854F0B',
+  OFFLINE: '#1F4F7A',
+  MISS: '#993C1D',
+  TIMEOUT: '#7A1F1F',
+  NETWORK: '#7A1F1F',
+};
+
+export const logBadgeCss = (type: LogEntryType) => css`
   font-size: 11px;
   padding: 2px 7px;
   border-radius: 6px;
   font-weight: 500;
-  background: ${type === 'HIT' ? '#EAF3DE' : type === 'STALE' ? '#FAEEDA' : '#FAECE7'};
-  color: ${type === 'HIT' ? '#3B6D11' : type === 'STALE' ? '#854F0B' : '#993C1D'};
+  background: ${LOG_BADGE_BG[type]};
+  color: ${LOG_BADGE_FG[type]};
 `;
 
 export const legendDotCss = (color: string) => css`

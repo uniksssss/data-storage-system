@@ -1,32 +1,25 @@
 import type { ISerializer } from '../cache-client/dependencies/serializer.interface';
-import type { CacheRecord } from '../types';
 
 export class Serializer implements ISerializer {
-  encode<T>(record: CacheRecord<T>['data']): Promise<Uint8Array> {
+  encode<T>(data: T): Promise<Uint8Array> {
     try {
-      const wrappedData = { data: record };
-      const jsonString = JSON.stringify(wrappedData);
+      const jsonString = JSON.stringify(data);
       const encoder = new TextEncoder();
-
       return Promise.resolve(encoder.encode(jsonString));
     } catch (error) {
-      return Promise.reject(
-        new Error(`Serialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`),
-      );
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return Promise.reject(new Error(`Serialization failed: ${message}`));
     }
   }
 
-  decode<T>(data: Uint8Array): Promise<CacheRecord<T>['data']> {
+  decode<T>(data: Uint8Array): Promise<T> {
     try {
       const decoder = new TextDecoder();
       const jsonString = decoder.decode(data);
-      const wrappedData = JSON.parse(jsonString) as { data: unknown };
-
-      return Promise.resolve(wrappedData.data as CacheRecord<T>['data']);
+      return Promise.resolve(JSON.parse(jsonString) as T);
     } catch (error) {
-      return Promise.reject(
-        new Error(`Deserialization failed: ${error instanceof Error ? error.message : 'Unknown error'}`),
-      );
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return Promise.reject(new Error(`Deserialization failed: ${message}`));
     }
   }
 }

@@ -1,6 +1,5 @@
-import { useRef, useState, useCallback } from 'react';
-import { Chart } from 'chart.js';
-import { BASE_URL, ENDPOINTS } from '../consts';
+import { useState } from 'react';
+import { ENDPOINTS } from '../consts';
 import {
   containerCss,
   contentLayoutCss,
@@ -11,168 +10,40 @@ import {
   controlsCss,
   iterationsLabelCss,
 } from './benchmark.style';
-import type { SWMetrics, LogEntry, CompareData } from './benchmark.types';
+import { MAX_ITERATIONS } from './benchmark.consts';
 import { LatencyCharts } from './components/latency-charts';
 import { MetricCard } from './components/metric-card';
 import { RequestLog } from './components/request-log';
 import { useSwActive } from './use-sw-active';
+import { useBenchmark } from './use-benchmark';
 
-async function fetchSWMetrics(): Promise<SWMetrics | null> {
-  const sw = navigator.serviceWorker?.controller;
-  if (!sw) {
-    return null;
+function formatMs(value: number | null | undefined, suffix = ''): string {
+  if (value === null || value === undefined || value <= 0) {
+    return '—';
   }
-  return new Promise((resolve) => {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = (e: MessageEvent<SWMetrics>) => resolve(e.data);
-    sw.postMessage({ type: 'GET_METRICS' }, [channel.port2]);
-  });
+  return `${value.toFixed(1)}${suffix}`;
 }
-
-async function resetSWMetrics(): Promise<void> {
-  const sw = navigator.serviceWorker?.controller;
-  if (!sw) {
-    return;
-  }
-  return new Promise((resolve) => {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = () => resolve();
-    sw.postMessage({ type: 'RESET_METRICS' }, [channel.port2]);
-  });
-}
-
-async function fetchOne(path: string, useCache: boolean): Promise<{ ms: number; type: LogEntry['type'] }> {
-  const url = useCache ? `${BASE_URL}${path}?__cache=1` : `${BASE_URL}${path}`;
-  const t0 = performance.now();
-  const res = await fetch(url, { cache: 'no-store' });
-  const ms = performance.now() - t0;
-  const cacheHeader = res.headers.get('X-Cache');
-  const staleHeader = res.headers.get('X-Cache-Status');
-  const type: LogEntry['type'] = !useCache
-    ? 'MISS'
-    : staleHeader === 'STALE'
-      ? 'STALE'
-      : cacheHeader === 'HIT'
-        ? 'HIT'
-        : 'MISS';
-  return { ms, type };
-}
-
-const fmt = (v: number | null | undefined, suffix = '') =>
-  v !== null && v !== undefined && v > 0 ? `${v.toFixed(1)}${suffix}` : '—';
 
 export function BenchmarkPanel() {
   const swActive = useSwActive();
-
   const [endpoint, setEndpoint] = useState('/todos/1');
   const [iterations, setIterations] = useState(10);
-  const [running, setRunning] = useState<false | 'cached' | 'direct'>(false);
-  const [log, setLog] = useState<LogEntry[]>([]);
-  const [metrics, setMetrics] = useState<SWMetrics | null>(null);
-  const [baselineMs, setBaselineMs] = useState<number | null>(null);
-  const [_, setCompareData] = useState<CompareData>({ cached: null, direct: null });
 
-  const logId = useRef(0);
-  const latencyChart = useRef<Chart | null>(null);
-  const compareChart = useRef<Chart | null>(null);
+  const { log, metrics, running, phase, runBenchmark, clearAll, registerCharts } = useBenchmark({
+    endpoint,
+    iterations,
+  });
 
-  const handleChartsReady = useCallback((latency: Chart, compare: Chart) => {
-    latencyChart.current = latency;
-    compareChart.current = compare;
-  }, []);
-
-  const runBenchmark = useCallback(
-    async (useCache: boolean) => {
-      if (running) {
-        return;
-      }
-      setRunning(useCache ? 'cached' : 'direct');
-
-      try {
-        const dsIdx = useCache ? 0 : 1;
-        const n = Math.min(iterations, 100);
-        const results: number[] = [];
-
-        for (let i = 0; i < n; i++) {
-          const { ms, type } = await fetchOne(endpoint, useCache);
-          results.push(ms);
-
-          setLog((prev) => [
-            {
-              id: ++logId.current,
-              time: new Date().toLocaleTimeString('ru', { hour12: false }),
-              type,
-              ms,
-              url: endpoint,
-            },
-            ...prev.slice(0, 49),
-          ]);
-
-          const chart = latencyChart.current;
-          if (chart) {
-            if (chart.data.labels!.length <= i) {
-              chart.data.labels!.push(`#${i + 1}`);
-            }
-            chart.data.datasets[dsIdx].data[i] = parseFloat(ms.toFixed(1));
-            chart.update('none');
-          }
-
-          await new Promise((r) => setTimeout(r, 80));
-        }
-
-        const avg = parseFloat((results.reduce((a, b) => a + b, 0) / results.length).toFixed(1));
-
-        if (!useCache) {
-          setBaselineMs(avg);
-        }
-
-        setCompareData((prev) => {
-          const next = { ...prev, [useCache ? 'cached' : 'direct']: avg };
-          const c = compareChart.current;
-          if (c) {
-            c.data.datasets[0].data = [next.cached ?? 0, next.direct ?? 0];
-            c.update();
-          }
-          return next;
-        });
-
-        const report = await fetchSWMetrics();
-        if (report) {
-          setMetrics(report);
-        }
-      } catch (e) {
-        console.error('Benchmark failed:', e);
-      } finally {
-        setRunning(false);
-      }
-    },
-    [running, iterations, endpoint],
-  );
-
-  const clearAll = useCallback(async () => {
-    await resetSWMetrics();
-    setLog([]);
-    setMetrics(null);
-    setBaselineMs(null);
-    setCompareData({ cached: null, direct: null });
-
-    const lc = latencyChart.current;
-    if (lc) {
-      lc.data.labels = [];
-      lc.data.datasets[0].data = [];
-      lc.data.datasets[1].data = [];
-      lc.update();
+  const runningLabel = (mode: 'cached' | 'direct', defaultLabel: string) => {
+    if (running !== mode) {
+      return defaultLabel;
     }
-
-    const cc = compareChart.current;
-    if (cc) {
-      cc.data.datasets[0].data = [0, 0];
-      cc.update();
-    }
-  }, []);
+    return phase === 'warmup' ? 'Прогрев...' : 'Запускается...';
+  };
 
   const avgHit = metrics?.avgLatencyHit ?? 0;
-  const speedup = avgHit > 0 && baselineMs ? baselineMs / avgHit : 0;
+  const avgMiss = metrics?.avgLatencyMiss ?? 0;
+  const speedup = metrics?.speedup ?? 0;
 
   return (
     <div css={containerCss}>
@@ -191,9 +62,14 @@ export function BenchmarkPanel() {
               value={metrics ? `${(metrics.hitRate * 100).toFixed(1)}%` : '—'}
               sub="кешированных"
             />
-            <MetricCard label="Avg HIT" value={fmt(metrics?.avgLatencyHit, ' мс')} sub="из кеша" />
-            <MetricCard label="Avg MISS" value={baselineMs ? `${baselineMs.toFixed(1)} мс` : '—'} sub="из сети" />
+            <MetricCard label="Avg HIT" value={formatMs(avgHit, ' мс')} sub="из кеша" />
+            <MetricCard label="Avg MISS" value={formatMs(avgMiss, ' мс')} sub="из сети" />
             <MetricCard label="Ускорение" value={speedup > 1 ? `${speedup.toFixed(1)}×` : '—'} sub="кеш vs сеть" />
+            <MetricCard
+              label="Вытеснений"
+              value={metrics?.evictions ? `${metrics.evictions}` : '—'}
+              sub="из хранилища"
+            />
           </div>
 
           <div css={controlsCss}>
@@ -208,23 +84,23 @@ export function BenchmarkPanel() {
               type="number"
               value={iterations}
               min={1}
-              max={100}
+              max={MAX_ITERATIONS}
               onChange={(e) => setIterations(Number(e.target.value))}
               style={{ width: 70, fontSize: 13 }}
             />
             <span css={iterationsLabelCss}>запросов</span>
             <button onClick={() => void runBenchmark(true)} disabled={running !== false} style={{ fontSize: 12 }}>
-              {running === 'cached' ? 'Запускается...' : 'Запустить с кешем'}
+              {runningLabel('cached', 'Запустить с кешем')}
             </button>
             <button onClick={() => void runBenchmark(false)} disabled={running !== false} style={{ fontSize: 12 }}>
-              {running === 'direct' ? 'Запускается...' : 'Запустить без кеша'}
+              {runningLabel('direct', 'Запустить без кеша')}
             </button>
             <button onClick={() => void clearAll()} style={{ fontSize: 12 }}>
               Сбросить
             </button>
           </div>
 
-          <LatencyCharts onChartsReady={handleChartsReady} />
+          <LatencyCharts onChartsReady={registerCharts} />
         </div>
         <RequestLog log={log} />
       </div>

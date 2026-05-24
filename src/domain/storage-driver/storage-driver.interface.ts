@@ -1,8 +1,8 @@
-import type { CacheRecordMeta } from '../types';
-
-export type StoredRecord = {
-  namespace: string;
-  key: string;
-  data?: Uint8Array;
-  meta: CacheRecordMeta;
-};
+export type {
+  IStorageDriver,
+  StoredRecord,
+  StoredRecordPredicate,
+  GetStorageRecordResult,
+  StorageQuota,
+  InitStorageDriverParams,
+} from '../cache-client/dependencies/storage-driver.interface';

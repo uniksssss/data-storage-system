@@ -3,8 +3,6 @@ export type CachePolicy = {
   swr?: number;
 };
 
-export type CacheTag = string;
-
 export type CacheRecord<T> = {
   data: T;
   meta: CacheRecordMeta;

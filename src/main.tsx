@@ -8,11 +8,8 @@ import App from './App.tsx';
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     const options: RegisterSWOptions = {
-      onRegistered(registration: ServiceWorkerRegistration | undefined) {
-        console.log('SW registered: ', registration);
-      },
-      onRegisterError(error: any) {
-        console.log('SW registration failed: ', error);
+      onRegisterError(error: unknown) {
+        console.error('SW registration failed:', error);
       },
     };
 
