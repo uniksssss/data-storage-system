@@ -7,9 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "json-server db.json --port 3001 --delay 200"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "chart.js": "^4.5.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
@@ -21,6 +25,8 @@
     "@types/react-dom": "^19.2.3",
     "@typescript-eslint/parser": "^8.56.0",
     "@vitejs/plugin-react": "^5.1.1",
+    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/ui": "^4.1.5",
     "eslint": "^9.39.1",
     "eslint-plugin-check-file": "^3.3.1",
     "eslint-plugin-import": "^2.32.0",
@@ -33,6 +39,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.0",
     "vite": "^7.3.1",
-    "vite-plugin-pwa": "^1.2.0"
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^4.1.5"
   }
 }

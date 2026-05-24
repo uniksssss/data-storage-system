@@ -44,6 +44,7 @@ export default tseslint.config(
     },
     rules: {
       "prettier/prettier": ["error", {}, { usePrettierrc: true }],
+      '@typescript-eslint/unbound-method': 'off',
 
       "@typescript-eslint/no-unused-vars": [
         "warn",

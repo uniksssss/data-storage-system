@@ -1,5 +1,5 @@
 #root {
-  max-width: 1280px;
+  max-width: 1560px;
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
@@ -35,6 +35,20 @@
 
 .card {
   padding: 2em;
+}
+
+.api-button {
+  margin-top: 1rem;
+}
+
+.api-result {
+  margin-top: 0.75rem;
+  color: #2f855a;
+}
+
+.api-error {
+  margin-top: 0.75rem;
+  color: #c53030;
 }
 
 .read-the-docs {
